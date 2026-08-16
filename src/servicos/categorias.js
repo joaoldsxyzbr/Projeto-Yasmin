@@ -1,21 +1,22 @@
 import { supabase } from '../lib/supabase'
-
-async function obterUsuario() {
-  const { data: { user }, error } = await supabase.auth.getUser()
-
-  if (error || !user) {
-    throw new Error('Não foi possível identificar o usuário.')
-  }
-
-  return user
-}
+import { obterUsuarioAutenticado } from './sessao'
 
 function ordenarCategorias(categorias) {
   return [...categorias].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
 }
 
+function normalizarNome(nome) {
+  const nomeLimpo = String(nome ?? '').trim()
+
+  if (!nomeLimpo || nomeLimpo.length > 60) {
+    throw new Error('Informe um nome de categoria com até 60 caracteres.')
+  }
+
+  return nomeLimpo
+}
+
 export async function listarCategorias() {
-  const usuario = await obterUsuario()
+  const usuario = await obterUsuarioAutenticado()
 
   const { data, error } = await supabase
     .from('categorias')
@@ -24,12 +25,12 @@ export async function listarCategorias() {
     .order('nome')
 
   if (error) throw new Error('Não foi possível carregar as categorias.')
-  return ordenarCategorias(data)
+  return ordenarCategorias(data ?? [])
 }
 
 export async function criarCategoria(nome) {
-  const usuario = await obterUsuario()
-  const nomeLimpo = nome.trim()
+  const usuario = await obterUsuarioAutenticado()
+  const nomeLimpo = normalizarNome(nome)
 
   const { data, error } = await supabase
     .from('categorias')
@@ -43,9 +44,13 @@ export async function criarCategoria(nome) {
 }
 
 export async function renomearCategoria(id, nome) {
+  const nomeLimpo = normalizarNome(nome)
+
+  if (!id) throw new Error('Categoria inválida.')
+
   const { error } = await supabase.rpc('renomear_categoria', {
     p_categoria_id: id,
-    p_novo_nome: nome.trim(),
+    p_novo_nome: nomeLimpo,
   })
 
   if (error?.code === '23505') throw new Error('Já existe uma categoria com esse nome.')
@@ -53,13 +58,16 @@ export async function renomearCategoria(id, nome) {
 }
 
 export async function excluirCategoria(id) {
-  const usuario = await obterUsuario()
+  const usuario = await obterUsuarioAutenticado()
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('categorias')
     .delete()
     .eq('id', id)
     .eq('usuario_id', usuario.id)
+    .select('id')
+    .maybeSingle()
 
   if (error) throw new Error('Não foi possível excluir a categoria.')
+  if (!data) throw new Error('Categoria não encontrada ou já excluída.')
 }
