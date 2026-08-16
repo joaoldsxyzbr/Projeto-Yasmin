@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import './GestaoCategorias.css'
 
 export function GestaoCategorias({ categorias, salvando, aoCriar, aoRenomear, aoExcluir }) {
   const [novaCategoria, setNovaCategoria] = useState('')
