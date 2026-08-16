@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { GestaoCategorias } from './componentes/GestaoCategorias'
 import { TelaAutenticacao } from './componentes/TelaAutenticacao'
+import { TelaGraficos } from './componentes/TelaGraficos'
+import { VisaoGeral } from './componentes/VisaoGeral'
 import { supabase } from './lib/supabase'
 import { criarCategoria, excluirCategoria, listarCategorias, renomearCategoria } from './servicos/categorias'
 import { buscarOrcamentoMensal, salvarOrcamentoMensal } from './servicos/configuracoes'
@@ -206,27 +208,6 @@ function App() {
   )
 
   const saldo = receitas - despesas
-  const percentualDisponivel = receitas > 0 ? Math.max(0, Math.min(100, Math.round((saldo / receitas) * 100))) : 0
-  const percentualOrcamento = orcamento > 0 ? Math.min(100, Math.round((despesas / orcamento) * 100)) : 0
-
-  const categorias = useMemo(() => {
-    const totais = transacoesDoMes
-      .filter((transacao) => transacao.tipo === 'despesa')
-      .reduce((acumulado, transacao) => {
-        acumulado[transacao.categoria] = (acumulado[transacao.categoria] || 0) + transacao.valor
-        return acumulado
-      }, {})
-
-    const maiorValor = Math.max(...Object.values(totais), 1)
-
-    return Object.entries(totais)
-      .map(([nome, valor]) => ({
-        nome,
-        valor,
-        percentual: Math.round((valor / maiorValor) * 100),
-      }))
-      .sort((a, b) => b.valor - a.valor)
-  }, [transacoesDoMes])
 
   function abrirFormulario() {
     setFormulario({
@@ -410,6 +391,7 @@ function App() {
   const titulos = {
     'visao-geral': 'Visão geral',
     transacoes: 'Transações',
+    graficos: 'Gráficos',
     categorias: 'Gestão de categorias',
     configuracoes: 'Configurações',
   }
@@ -428,6 +410,7 @@ function App() {
         <nav className="nav-list" aria-label="Navegação principal">
           <BotaoNavegacao ativo={tela === 'visao-geral'} icone="⌂" rotulo="Visão geral" aoClicar={() => mudarTela('visao-geral')} />
           <BotaoNavegacao ativo={tela === 'transacoes'} icone="↕" rotulo="Transações" aoClicar={() => mudarTela('transacoes')} />
+          <BotaoNavegacao ativo={tela === 'graficos'} icone="◒" rotulo="Gráficos" aoClicar={() => mudarTela('graficos')} />
           <BotaoNavegacao ativo={tela === 'categorias'} icone="◫" rotulo="Categorias" aoClicar={() => mudarTela('categorias')} />
         </nav>
 
@@ -455,106 +438,14 @@ function App() {
         {carregandoDados && <div className="aviso aviso-app">Sincronizando dados...</div>}
 
         {tela === 'visao-geral' && (
-          <>
-            <section className="hero-grid" aria-label="Resumo financeiro">
-              <article className="balance-card">
-                <div className="balance-header">
-                  <span>Saldo do mês</span>
-                  <span className="balance-badge">{formatarMes(mesSelecionado)}</span>
-                </div>
-                <strong className="balance-value">{formatarMoeda(saldo)}</strong>
-                <p>
-                  {receitas > 0
-                    ? `${percentualDisponivel}% da renda do mês ainda está disponível.`
-                    : 'Adicione uma receita para acompanhar o saldo do mês.'}
-                </p>
-                <div className="balance-progress">
-                  <span style={{ width: `${percentualDisponivel}%` }} />
-                </div>
-              </article>
-
-              <div className="stats-grid">
-                <article className="stat-card">
-                  <div className="stat-icon income">↑</div>
-                  <div>
-                    <span>Receitas</span>
-                    <strong>{formatarMoeda(receitas)}</strong>
-                  </div>
-                </article>
-                <article className="stat-card">
-                  <div className="stat-icon expense">↓</div>
-                  <div>
-                    <span>Despesas</span>
-                    <strong>{formatarMoeda(despesas)}</strong>
-                  </div>
-                </article>
-              </div>
-            </section>
-
-            <section className="content-grid">
-              <article className="panel transactions-panel">
-                <div className="panel-header">
-                  <div>
-                    <span className="section-kicker">Movimentações</span>
-                    <h2>Transações recentes</h2>
-                  </div>
-                  <button className="text-button" onClick={() => mudarTela('transacoes')}>Ver todas</button>
-                </div>
-                <ListaTransacoes itens={transacoesDoMes.slice(0, 4)} aoExcluir={removerTransacao} compacta />
-              </article>
-
-              <article className="panel quick-panel">
-                <span className="section-kicker">Atalho</span>
-                <h2>Registrar movimento</h2>
-                <p>Adicione uma despesa ou receita e o resumo será atualizado na hora.</p>
-                <button className="primary-button" onClick={abrirFormulario}><span>＋</span> Nova transação</button>
-              </article>
-            </section>
-
-            <section className="content-grid lower-grid">
-              <article className="panel categories-panel">
-                <div className="panel-header">
-                  <div>
-                    <span className="section-kicker">Por categoria</span>
-                    <h2>Onde você mais gastou</h2>
-                  </div>
-                </div>
-
-                {categorias.length ? (
-                  <div className="category-list">
-                    {categorias.slice(0, 5).map((categoria) => (
-                      <div className="category-row" key={categoria.nome}>
-                        <div className="category-label">
-                          <span>{iconesCategoria[categoria.nome] || '✨'} {categoria.nome}</span>
-                          <strong>{formatarMoeda(categoria.valor)}</strong>
-                        </div>
-                        <div className="category-track">
-                          <span style={{ width: `${categoria.percentual}%` }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="empty-mini">As categorias aparecem aqui quando houver despesas.</div>
-                )}
-              </article>
-
-              <article className="panel budget-panel">
-                <div>
-                  <span className="section-kicker">Planejamento</span>
-                  <h2>Orçamento do mês</h2>
-                </div>
-                <div
-                  className="budget-ring"
-                  style={{ '--budget-percent': `${percentualOrcamento}%` }}
-                  aria-label={`${percentualOrcamento}% do orçamento utilizado`}
-                >
-                  <div><strong>{percentualOrcamento}%</strong><span>usado</span></div>
-                </div>
-                <p><strong>{formatarMoeda(despesas)}</strong> de {formatarMoeda(orcamento)}</p>
-              </article>
-            </section>
-          </>
+          <VisaoGeral
+            transacoes={transacoesDoMes}
+            receitas={receitas}
+            despesas={despesas}
+            saldo={saldo}
+            mesSelecionado={mesSelecionado}
+            aoAdicionar={abrirFormulario}
+          />
         )}
 
         {tela === 'transacoes' && (
@@ -568,6 +459,15 @@ function App() {
             </div>
             <ListaTransacoes itens={transacoesDoMes} aoExcluir={removerTransacao} />
           </section>
+        )}
+
+        {tela === 'graficos' && (
+          <TelaGraficos
+            transacoes={transacoesDoMes}
+            receitas={receitas}
+            despesas={despesas}
+            mesSelecionado={mesSelecionado}
+          />
         )}
 
         {tela === 'categorias' && (
@@ -622,6 +522,7 @@ function App() {
         <button className={tela === 'visao-geral' ? 'active' : ''} onClick={() => mudarTela('visao-geral')}><span>⌂</span>Início</button>
         <button className={tela === 'transacoes' ? 'active' : ''} onClick={() => mudarTela('transacoes')}><span>↕</span>Transações</button>
         <button className="mobile-add" aria-label="Nova transação" onClick={abrirFormulario}>＋</button>
+        <button className={tela === 'graficos' ? 'active' : ''} onClick={() => mudarTela('graficos')}><span>◒</span>Gráficos</button>
         <button className={tela === 'categorias' ? 'active' : ''} onClick={() => mudarTela('categorias')}><span>◫</span>Categorias</button>
         <button className={tela === 'configuracoes' ? 'active' : ''} onClick={() => mudarTela('configuracoes')}><span>⚙</span>Ajustes</button>
       </nav>
