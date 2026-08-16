@@ -1,16 +1,5 @@
 import { supabase } from '../lib/supabase'
 
-const categoriasPadrao = [
-  'Alimentação',
-  'Transporte',
-  'Moradia',
-  'Saúde',
-  'Lazer',
-  'Compras',
-  'Assinaturas',
-  'Outros',
-]
-
 async function obterUsuario() {
   const { data: { user }, error } = await supabase.auth.getUser()
 
@@ -35,15 +24,7 @@ export async function listarCategorias() {
     .order('nome')
 
   if (error) throw new Error('Não foi possível carregar as categorias.')
-  if (data.length) return ordenarCategorias(data)
-
-  const { data: criadas, error: erroCriacao } = await supabase
-    .from('categorias')
-    .insert(categoriasPadrao.map((nome) => ({ usuario_id: usuario.id, nome })))
-    .select('id, nome, criado_em, atualizado_em')
-
-  if (erroCriacao) throw new Error('Não foi possível preparar as categorias iniciais.')
-  return ordenarCategorias(criadas)
+  return ordenarCategorias(data)
 }
 
 export async function criarCategoria(nome) {
