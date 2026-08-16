@@ -35,8 +35,10 @@ export function TelaAutenticacao() {
       if (!data.session) {
         setMensagem('Cadastro criado. Confira seu e-mail para confirmar o acesso.')
       }
-    } catch (error) {
-      setErro(error.message || 'Não foi possível concluir o acesso.')
+    } catch {
+      setErro(modo === 'entrar'
+        ? 'Não foi possível entrar. Verifique o e-mail e a senha.'
+        : 'Não foi possível criar o acesso. Verifique os dados e tente novamente.')
     } finally {
       setCarregando(false)
     }
