@@ -21,7 +21,7 @@ jobs:
       - name: Preparar Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
 
       - name: Instalar dependências reproduzíveis
@@ -32,3 +32,13 @@ jobs:
 
       - name: Gerar build de produção
         run: npm run build
+
+      - name: Validar PWA
+        run: |
+          node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('dist/manifest.webmanifest','utf8'));if(m.display!=='standalone'||!m.icons?.some(i=>i.sizes==='192x192')||!m.icons?.some(i=>i.sizes==='512x512')||!m.icons?.some(i=>i.purpose==='maskable'))process.exit(1)"
+          test -f dist/sw.js
+          test -f dist/favicon.svg
+          test -f dist/icons/icon-192.png
+          test -f dist/icons/icon-512.png
+          test -f dist/icons/icon-maskable-512.png
+          test -f dist/icons/apple-touch-icon.png
