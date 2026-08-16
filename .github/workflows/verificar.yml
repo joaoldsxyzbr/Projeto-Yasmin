@@ -31,3 +31,11 @@ jobs:
 
       - name: Gerar build de produção
         run: npm run build
+
+      - name: Publicar lockfile gerado
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-lock
+          path: package-lock.json
+          if-no-files-found: error
+          retention-days: 1
