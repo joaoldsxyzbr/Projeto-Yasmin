@@ -1,44 +1,26 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 
-export function TelaAutenticacao() {
-  const [modo, setModo] = useState('entrar')
+export function TelaAutenticacao({ mensagemAcesso = '' }) {
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [carregando, setCarregando] = useState(false)
-  const [mensagem, setMensagem] = useState('')
   const [erro, setErro] = useState('')
 
   async function enviarFormulario(evento) {
     evento.preventDefault()
     setCarregando(true)
     setErro('')
-    setMensagem('')
 
     try {
-      if (modo === 'entrar') {
-        const { error } = await supabase.auth.signInWithPassword({ email, password: senha })
-        if (error) throw error
-        return
-      }
-
-      const { data, error } = await supabase.auth.signUp({
-        email,
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
         password: senha,
-        options: {
-          emailRedirectTo: window.location.origin,
-        },
       })
 
       if (error) throw error
-
-      if (!data.session) {
-        setMensagem('Cadastro criado. Confira seu e-mail para confirmar o acesso.')
-      }
     } catch {
-      setErro(modo === 'entrar'
-        ? 'Não foi possível entrar. Verifique o e-mail e a senha.'
-        : 'Não foi possível criar o acesso. Verifique os dados e tente novamente.')
+      setErro('Não foi possível entrar. Verifique o e-mail e a senha.')
     } finally {
       setCarregando(false)
     }
@@ -50,12 +32,9 @@ export function TelaAutenticacao() {
         <div className="marca-autenticacao">Y</div>
         <span className="section-kicker">Projeto Yasmin</span>
         <h1>Meu controle financeiro 🌷</h1>
-        <p className="texto-autenticacao">Entre para acessar seus lançamentos salvos com segurança.</p>
-
-        <div className="alternador-autenticacao" aria-label="Escolher modo de acesso">
-          <button type="button" className={modo === 'entrar' ? 'active' : ''} onClick={() => setModo('entrar')}>Entrar</button>
-          <button type="button" className={modo === 'cadastro' ? 'active' : ''} onClick={() => setModo('cadastro')}>Criar acesso</button>
-        </div>
+        <p className="texto-autenticacao">
+          Acesso restrito. Entre com a conta autorizada para continuar.
+        </p>
 
         <form className="formulario-autenticacao" onSubmit={enviarFormulario}>
           <label className="field">
@@ -76,18 +55,19 @@ export function TelaAutenticacao() {
               required
               minLength="6"
               type="password"
-              autoComplete={modo === 'entrar' ? 'current-password' : 'new-password'}
-              placeholder="Mínimo de 6 caracteres"
+              autoComplete="current-password"
+              placeholder="Sua senha"
               value={senha}
               onChange={(evento) => setSenha(evento.target.value)}
             />
           </label>
 
-          {erro && <div className="aviso erro">{erro}</div>}
-          {mensagem && <div className="aviso sucesso">{mensagem}</div>}
+          {(erro || mensagemAcesso) && (
+            <div className="aviso erro">{erro || mensagemAcesso}</div>
+          )}
 
           <button className="primary-button" type="submit" disabled={carregando}>
-            {carregando ? 'Aguarde...' : modo === 'entrar' ? 'Entrar' : 'Criar acesso'}
+            {carregando ? 'Entrando...' : 'Entrar'}
           </button>
         </form>
       </section>
