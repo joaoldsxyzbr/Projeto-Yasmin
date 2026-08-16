@@ -1,9 +1,13 @@
 import { supabase } from '../lib/supabase'
+import { obterUsuarioAutenticado } from './sessao'
 
 export async function buscarOrcamentoMensal() {
+  const usuario = await obterUsuarioAutenticado()
+
   const { data, error } = await supabase
     .from('configuracoes_usuario')
     .select('orcamento_mensal')
+    .eq('usuario_id', usuario.id)
     .maybeSingle()
 
   if (error) throw new Error('Não foi possível carregar o orçamento mensal.')
@@ -11,17 +15,23 @@ export async function buscarOrcamentoMensal() {
 }
 
 export async function salvarOrcamentoMensal(valor) {
-  const { data: { user }, error: erroUsuario } = await supabase.auth.getUser()
+  const usuario = await obterUsuarioAutenticado()
+  const orcamento = Number(valor)
 
-  if (erroUsuario || !user) throw new Error('Sua sessão expirou. Entre novamente.')
+  if (!Number.isFinite(orcamento) || orcamento < 0) {
+    throw new Error('Informe um orçamento mensal válido.')
+  }
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('configuracoes_usuario')
     .upsert({
-      usuario_id: user.id,
-      orcamento_mensal: valor,
+      usuario_id: usuario.id,
+      orcamento_mensal: orcamento,
       atualizado_em: new Date().toISOString(),
     }, { onConflict: 'usuario_id' })
+    .select('orcamento_mensal')
+    .single()
 
   if (error) throw new Error('Não foi possível salvar o orçamento mensal.')
+  return Number(data.orcamento_mensal)
 }
