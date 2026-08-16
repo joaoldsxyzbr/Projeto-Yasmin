@@ -38,32 +38,6 @@
   line-height: 1.6;
 }
 
-.alternador-autenticacao {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  margin-bottom: 22px;
-  padding: 5px;
-  border-radius: 14px;
-  background: var(--rose-soft);
-}
-
-.alternador-autenticacao button {
-  padding: 10px 12px;
-  border: 0;
-  border-radius: 10px;
-  color: var(--muted);
-  background: transparent;
-  cursor: pointer;
-}
-
-.alternador-autenticacao button.active {
-  color: var(--rose-dark);
-  background: #fff;
-  font-weight: 700;
-  box-shadow: 0 5px 14px rgba(95, 64, 76, 0.08);
-}
-
 .formulario-autenticacao,
 .formulario-configuracoes {
   display: grid;
@@ -83,12 +57,6 @@
   border-color: #f0cece;
   color: #9d4e4e;
   background: #fff4f4;
-}
-
-.aviso.sucesso {
-  border-color: #cfe5d6;
-  color: #547b62;
-  background: #f2faf4;
 }
 
 .aviso-app {
