@@ -1,11 +1,12 @@
 import { supabase } from '../lib/supabase'
+import { obterUsuarioAutenticado } from './sessao'
 
 export async function verificarAcessoAutorizado() {
-  const { data: { user }, error: erroUsuario } = await supabase.auth.getUser()
+  const usuario = await obterUsuarioAutenticado()
 
-  if (erroUsuario || !user?.email) return false
+  if (!usuario.email) return false
 
-  const email = user.email.trim().toLowerCase()
+  const email = usuario.email.trim().toLowerCase()
   const { data, error } = await supabase
     .from('usuarios_autorizados')
     .select('email')
@@ -13,6 +14,6 @@ export async function verificarAcessoAutorizado() {
     .eq('ativo', true)
     .maybeSingle()
 
-  if (error) throw error
+  if (error) throw new Error('Não foi possível validar a autorização desta conta.')
   return Boolean(data)
 }
