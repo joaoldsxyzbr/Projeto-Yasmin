@@ -6,15 +6,14 @@ export async function buscarOrcamentoMensal() {
     .select('orcamento_mensal')
     .maybeSingle()
 
-  if (error) throw error
+  if (error) throw new Error('Não foi possível carregar o orçamento mensal.')
   return data ? Number(data.orcamento_mensal) : 5000
 }
 
 export async function salvarOrcamentoMensal(valor) {
   const { data: { user }, error: erroUsuario } = await supabase.auth.getUser()
 
-  if (erroUsuario) throw erroUsuario
-  if (!user) throw new Error('Usuário não autenticado.')
+  if (erroUsuario || !user) throw new Error('Sua sessão expirou. Entre novamente.')
 
   const { error } = await supabase
     .from('configuracoes_usuario')
@@ -24,5 +23,5 @@ export async function salvarOrcamentoMensal(valor) {
       atualizado_em: new Date().toISOString(),
     }, { onConflict: 'usuario_id' })
 
-  if (error) throw error
+  if (error) throw new Error('Não foi possível salvar o orçamento mensal.')
 }
