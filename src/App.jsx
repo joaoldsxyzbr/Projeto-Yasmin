@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
+import { GestaoCategorias } from './componentes/GestaoCategorias'
 import { TelaAutenticacao } from './componentes/TelaAutenticacao'
 import { supabase } from './lib/supabase'
+import { criarCategoria, excluirCategoria, listarCategorias, renomearCategoria } from './servicos/categorias'
 import { buscarOrcamentoMensal, salvarOrcamentoMensal } from './servicos/configuracoes'
 import { criarTransacao, excluirTransacao, listarTransacoes } from './servicos/transacoes'
-
-const categoriasDespesa = ['Alimentação', 'Transporte', 'Moradia', 'Saúde', 'Lazer', 'Compras', 'Assinaturas', 'Outros']
 
 const iconesCategoria = {
   Alimentação: '🛒',
@@ -16,6 +16,10 @@ const iconesCategoria = {
   Assinaturas: '📱',
   Outros: '✨',
   Receita: '💰',
+}
+
+function ordenarCategoriasPorNome(categorias) {
+  return [...categorias].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
 }
 
 function formatarMoeda(valor) {
@@ -112,6 +116,7 @@ function App() {
   const [carregandoDados, setCarregandoDados] = useState(false)
   const [erro, setErro] = useState('')
   const [transacoes, setTransacoes] = useState([])
+  const [categoriasGerenciadas, setCategoriasGerenciadas] = useState([])
   const [orcamento, setOrcamento] = useState(5000)
   const [orcamentoRascunho, setOrcamentoRascunho] = useState('5000')
   const [mesSelecionado, setMesSelecionado] = useState(obterMesAtual)
@@ -122,7 +127,7 @@ function App() {
     tipo: 'despesa',
     descricao: '',
     valor: '',
-    categoria: 'Alimentação',
+    categoria: '',
     data: obterHoje(),
   })
 
@@ -143,6 +148,7 @@ function App() {
   useEffect(() => {
     if (!sessao?.user?.id) {
       setTransacoes([])
+      setCategoriasGerenciadas([])
       return
     }
 
@@ -153,13 +159,15 @@ function App() {
       setErro('')
 
       try {
-        const [transacoesSalvas, orcamentoSalvo] = await Promise.all([
+        const [transacoesSalvas, orcamentoSalvo, categoriasSalvas] = await Promise.all([
           listarTransacoes(),
           buscarOrcamentoMensal(),
+          listarCategorias(),
         ])
 
         if (!ativo) return
         setTransacoes(transacoesSalvas)
+        setCategoriasGerenciadas(categoriasSalvas)
         setOrcamento(orcamentoSalvo)
         setOrcamentoRascunho(String(orcamentoSalvo))
       } catch (error) {
@@ -225,7 +233,7 @@ function App() {
       tipo: 'despesa',
       descricao: '',
       valor: '',
-      categoria: 'Alimentação',
+      categoria: categoriasGerenciadas[0]?.nome || '',
       data: mesSelecionado === obterMesAtual() ? obterHoje() : `${mesSelecionado}-01`,
     })
     setMostrarFormulario(true)
@@ -235,7 +243,7 @@ function App() {
     setFormulario((atual) => ({
       ...atual,
       tipo,
-      categoria: tipo === 'receita' ? 'Receita' : 'Alimentação',
+      categoria: tipo === 'receita' ? 'Receita' : categoriasGerenciadas[0]?.nome || '',
     }))
   }
 
@@ -243,7 +251,18 @@ function App() {
     evento.preventDefault()
     const valor = Number(formulario.valor)
 
-    if (!formulario.descricao.trim() || !Number.isFinite(valor) || valor <= 0 || !formulario.data) return
+    if (
+      !formulario.descricao.trim()
+      || !Number.isFinite(valor)
+      || valor <= 0
+      || !formulario.data
+      || (formulario.tipo === 'despesa' && !formulario.categoria)
+    ) {
+      if (formulario.tipo === 'despesa' && !formulario.categoria) {
+        setErro('Crie uma categoria antes de registrar uma despesa.')
+      }
+      return
+    }
 
     setSalvando(true)
     setErro('')
@@ -278,6 +297,76 @@ function App() {
       setTransacoes((atuais) => atuais.filter((item) => item.id !== id))
     } catch (error) {
       setErro(error.message || 'Não foi possível excluir a transação.')
+    }
+  }
+
+  async function adicionarCategoria(nome) {
+    setSalvando(true)
+    setErro('')
+
+    try {
+      const novaCategoria = await criarCategoria(nome)
+      setCategoriasGerenciadas((atuais) => ordenarCategoriasPorNome([...atuais, novaCategoria]))
+      return true
+    } catch (error) {
+      setErro(error.message || 'Não foi possível criar a categoria.')
+      return false
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  async function editarCategoria(categoria, novoNome) {
+    setSalvando(true)
+    setErro('')
+
+    try {
+      await renomearCategoria(categoria.id, novoNome)
+
+      setCategoriasGerenciadas((atuais) => ordenarCategoriasPorNome(
+        atuais.map((item) => item.id === categoria.id
+          ? { ...item, nome: novoNome, atualizado_em: new Date().toISOString() }
+          : item),
+      ))
+      setTransacoes((atuais) => atuais.map((transacao) => (
+        transacao.tipo === 'despesa' && transacao.categoria === categoria.nome
+          ? { ...transacao, categoria: novoNome }
+          : transacao
+      )))
+      setFormulario((atual) => atual.categoria === categoria.nome
+        ? { ...atual, categoria: novoNome }
+        : atual)
+      return true
+    } catch (error) {
+      setErro(error.message || 'Não foi possível renomear a categoria.')
+      return false
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  async function removerCategoria(categoria) {
+    setSalvando(true)
+    setErro('')
+
+    try {
+      await excluirCategoria(categoria.id)
+
+      setCategoriasGerenciadas((atuais) => {
+        const restantes = atuais.filter((item) => item.id !== categoria.id)
+
+        setFormulario((formularioAtual) => formularioAtual.categoria === categoria.nome
+          ? { ...formularioAtual, categoria: restantes[0]?.nome || '' }
+          : formularioAtual)
+
+        return restantes
+      })
+      return true
+    } catch (error) {
+      setErro(error.message || 'Não foi possível excluir a categoria.')
+      return false
+    } finally {
+      setSalvando(false)
     }
   }
 
@@ -321,7 +410,7 @@ function App() {
   const titulos = {
     'visao-geral': 'Visão geral',
     transacoes: 'Transações',
-    categorias: 'Categorias',
+    categorias: 'Gestão de categorias',
     configuracoes: 'Configurações',
   }
 
@@ -436,7 +525,7 @@ function App() {
                     {categorias.slice(0, 5).map((categoria) => (
                       <div className="category-row" key={categoria.nome}>
                         <div className="category-label">
-                          <span>{iconesCategoria[categoria.nome]} {categoria.nome}</span>
+                          <span>{iconesCategoria[categoria.nome] || '✨'} {categoria.nome}</span>
                           <strong>{formatarMoeda(categoria.valor)}</strong>
                         </div>
                         <div className="category-track">
@@ -482,35 +571,13 @@ function App() {
         )}
 
         {tela === 'categorias' && (
-          <section className="panel page-panel">
-            <div className="panel-header">
-              <div>
-                <span className="section-kicker">{formatarMes(mesSelecionado)}</span>
-                <h2>Gastos por categoria</h2>
-              </div>
-            </div>
-            {categorias.length ? (
-              <div className="category-list expanded">
-                {categorias.map((categoria) => (
-                  <div className="category-row" key={categoria.nome}>
-                    <div className="category-label">
-                      <span>{iconesCategoria[categoria.nome]} {categoria.nome}</span>
-                      <strong>{formatarMoeda(categoria.valor)}</strong>
-                    </div>
-                    <div className="category-track">
-                      <span style={{ width: `${categoria.percentual}%` }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="empty-state">
-                <span>📊</span>
-                <strong>Ainda não há despesas neste mês</strong>
-                <p>Quando você registrar gastos, eles serão agrupados automaticamente.</p>
-              </div>
-            )}
-          </section>
+          <GestaoCategorias
+            categorias={categoriasGerenciadas}
+            salvando={salvando}
+            aoCriar={adicionarCategoria}
+            aoRenomear={editarCategoria}
+            aoExcluir={removerCategoria}
+          />
         )}
 
         {tela === 'configuracoes' && (
@@ -620,15 +687,26 @@ function App() {
                 <label className="field">
                   <span>Categoria</span>
                   <select
+                    required
                     value={formulario.categoria}
                     onChange={(evento) => setFormulario((atual) => ({ ...atual, categoria: evento.target.value }))}
                   >
-                    {categoriasDespesa.map((categoria) => <option key={categoria}>{categoria}</option>)}
+                    {categoriasGerenciadas.length ? (
+                      categoriasGerenciadas.map((categoria) => (
+                        <option key={categoria.id} value={categoria.nome}>{categoria.nome}</option>
+                      ))
+                    ) : (
+                      <option value="">Crie uma categoria primeiro</option>
+                    )}
                   </select>
                 </label>
               )}
 
-              <button className="primary-button submit-button" type="submit" disabled={salvando}>
+              <button
+                className="primary-button submit-button"
+                type="submit"
+                disabled={salvando || (formulario.tipo === 'despesa' && !formulario.categoria)}
+              >
                 {salvando ? 'Salvando...' : 'Salvar transação'}
               </button>
             </form>
