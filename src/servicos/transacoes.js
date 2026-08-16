@@ -16,7 +16,7 @@ export async function listarTransacoes() {
     .order('data_transacao', { ascending: false })
     .order('criado_em', { ascending: false })
 
-  if (error) throw error
+  if (error) throw new Error('Não foi possível carregar as transações.')
   return data.map(normalizarTransacao)
 }
 
@@ -33,7 +33,7 @@ export async function criarTransacao(transacao) {
     .select(campos)
     .single()
 
-  if (error) throw error
+  if (error) throw new Error('Não foi possível salvar a transação.')
   return normalizarTransacao(data)
 }
 
@@ -43,5 +43,5 @@ export async function excluirTransacao(id) {
     .delete()
     .eq('id', id)
 
-  if (error) throw error
+  if (error) throw new Error('Não foi possível excluir a transação.')
 }
