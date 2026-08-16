@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
+import { TelaAutenticacao } from './componentes/TelaAutenticacao'
+import { supabase } from './lib/supabase'
+import { buscarOrcamentoMensal, salvarOrcamentoMensal } from './servicos/configuracoes'
+import { criarTransacao, excluirTransacao, listarTransacoes } from './servicos/transacoes'
 
-const expenseCategories = ['Alimentação', 'Transporte', 'Moradia', 'Saúde', 'Lazer', 'Compras', 'Assinaturas', 'Outros']
+const categoriasDespesa = ['Alimentação', 'Transporte', 'Moradia', 'Saúde', 'Lazer', 'Compras', 'Assinaturas', 'Outros']
 
-const categoryIcons = {
+const iconesCategoria = {
   Alimentação: '🛒',
   Transporte: '🚗',
   Moradia: '🏠',
@@ -14,74 +18,56 @@ const categoryIcons = {
   Receita: '💰',
 }
 
-const storageKeys = {
-  transactions: 'yasmin-transactions',
-  budget: 'yasmin-budget',
-}
-
-function loadTransactions() {
-  try {
-    return JSON.parse(localStorage.getItem(storageKeys.transactions)) || []
-  } catch {
-    return []
-  }
-}
-
-function loadBudget() {
-  const value = Number(localStorage.getItem(storageKeys.budget))
-  return Number.isFinite(value) && value > 0 ? value : 5000
-}
-
-function formatCurrency(value) {
+function formatarMoeda(valor) {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL',
-  }).format(value)
+  }).format(valor)
 }
 
-function formatMonth(value) {
-  const [year, month] = value.split('-').map(Number)
+function formatarMes(valor) {
+  const [ano, mes] = valor.split('-').map(Number)
   return new Intl.DateTimeFormat('pt-BR', {
     month: 'long',
     year: 'numeric',
-  }).format(new Date(year, month - 1, 1))
+  }).format(new Date(ano, mes - 1, 1))
 }
 
-function formatDate(value) {
+function formatarData(valor) {
   return new Intl.DateTimeFormat('pt-BR', {
     day: '2-digit',
     month: 'short',
-  }).format(new Date(`${value}T12:00:00`))
+  }).format(new Date(`${valor}T12:00:00`))
 }
 
-function getCurrentMonth() {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+function obterMesAtual() {
+  const agora = new Date()
+  return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}`
 }
 
-function getToday() {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+function obterHoje() {
+  const agora = new Date()
+  return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}-${String(agora.getDate()).padStart(2, '0')}`
 }
 
-function greeting() {
-  const hour = new Date().getHours()
-  if (hour < 12) return 'Bom dia'
-  if (hour < 18) return 'Boa tarde'
+function obterSaudacao() {
+  const hora = new Date().getHours()
+  if (hora < 12) return 'Bom dia'
+  if (hora < 18) return 'Boa tarde'
   return 'Boa noite'
 }
 
-function NavButton({ active, icon, label, onClick }) {
+function BotaoNavegacao({ ativo, icone, rotulo, aoClicar }) {
   return (
-    <button className={`nav-item${active ? ' active' : ''}`} onClick={onClick}>
-      <span className="nav-icon" aria-hidden="true">{icon}</span>
-      {label}
+    <button className={`nav-item${ativo ? ' active' : ''}`} onClick={aoClicar}>
+      <span className="nav-icon" aria-hidden="true">{icone}</span>
+      {rotulo}
     </button>
   )
 }
 
-function TransactionList({ items, onDelete, compact = false }) {
-  if (!items.length) {
+function ListaTransacoes({ itens, aoExcluir, compacta = false }) {
+  if (!itens.length) {
     return (
       <div className="empty-state">
         <span>🌷</span>
@@ -93,23 +79,23 @@ function TransactionList({ items, onDelete, compact = false }) {
 
   return (
     <div className="transaction-list">
-      {items.map((transaction) => (
-        <div className="transaction" key={transaction.id}>
-          <div className="transaction-icon">{categoryIcons[transaction.category] || '✨'}</div>
+      {itens.map((transacao) => (
+        <div className="transaction" key={transacao.id}>
+          <div className="transaction-icon">{iconesCategoria[transacao.categoria] || '✨'}</div>
           <div className="transaction-copy">
-            <strong>{transaction.description}</strong>
-            <span>{transaction.category} · {formatDate(transaction.date)}</span>
+            <strong>{transacao.descricao}</strong>
+            <span>{transacao.categoria} · {formatarData(transacao.data_transacao)}</span>
           </div>
-          <strong className={`transaction-value${transaction.type === 'income' ? ' income-text' : ''}`}>
-            {transaction.type === 'income' ? '+' : '-'} {formatCurrency(transaction.amount)}
+          <strong className={`transaction-value${transacao.tipo === 'receita' ? ' income-text' : ''}`}>
+            {transacao.tipo === 'receita' ? '+' : '-'} {formatarMoeda(transacao.valor)}
           </strong>
-          {!compact && (
+          {!compacta && (
             <button
               className="delete-button"
               type="button"
-              aria-label={`Excluir ${transaction.description}`}
+              aria-label={`Excluir ${transacao.descricao}`}
               title="Excluir transação"
-              onClick={() => onDelete(transaction.id)}
+              onClick={() => aoExcluir(transacao.id)}
             >
               ×
             </button>
@@ -121,129 +107,222 @@ function TransactionList({ items, onDelete, compact = false }) {
 }
 
 function App() {
-  const [transactions, setTransactions] = useState(loadTransactions)
-  const [budget, setBudget] = useState(loadBudget)
-  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth)
-  const [view, setView] = useState('overview')
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({
-    type: 'expense',
-    description: '',
-    amount: '',
-    category: 'Alimentação',
-    date: getToday(),
+  const [sessao, setSessao] = useState(null)
+  const [verificandoSessao, setVerificandoSessao] = useState(true)
+  const [carregandoDados, setCarregandoDados] = useState(false)
+  const [erro, setErro] = useState('')
+  const [transacoes, setTransacoes] = useState([])
+  const [orcamento, setOrcamento] = useState(5000)
+  const [orcamentoRascunho, setOrcamentoRascunho] = useState('5000')
+  const [mesSelecionado, setMesSelecionado] = useState(obterMesAtual)
+  const [tela, setTela] = useState('visao-geral')
+  const [mostrarFormulario, setMostrarFormulario] = useState(false)
+  const [salvando, setSalvando] = useState(false)
+  const [formulario, setFormulario] = useState({
+    tipo: 'despesa',
+    descricao: '',
+    valor: '',
+    categoria: 'Alimentação',
+    data: obterHoje(),
   })
 
   useEffect(() => {
-    localStorage.setItem(storageKeys.transactions, JSON.stringify(transactions))
-  }, [transactions])
+    supabase.auth.getSession().then(({ data }) => {
+      setSessao(data.session)
+      setVerificandoSessao(false)
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_evento, novaSessao) => {
+      setSessao(novaSessao)
+      setVerificandoSessao(false)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
 
   useEffect(() => {
-    localStorage.setItem(storageKeys.budget, String(budget))
-  }, [budget])
-
-  const monthTransactions = useMemo(
-    () => transactions
-      .filter((transaction) => transaction.date.startsWith(selectedMonth))
-      .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id),
-    [transactions, selectedMonth],
-  )
-
-  const income = useMemo(
-    () => monthTransactions
-      .filter((transaction) => transaction.type === 'income')
-      .reduce((total, transaction) => total + transaction.amount, 0),
-    [monthTransactions],
-  )
-
-  const expenses = useMemo(
-    () => monthTransactions
-      .filter((transaction) => transaction.type === 'expense')
-      .reduce((total, transaction) => total + transaction.amount, 0),
-    [monthTransactions],
-  )
-
-  const balance = income - expenses
-  const availablePercent = income > 0 ? Math.max(0, Math.min(100, Math.round((balance / income) * 100))) : 0
-  const budgetPercent = budget > 0 ? Math.min(100, Math.round((expenses / budget) * 100)) : 0
-
-  const categories = useMemo(() => {
-    const totals = monthTransactions
-      .filter((transaction) => transaction.type === 'expense')
-      .reduce((acc, transaction) => {
-        acc[transaction.category] = (acc[transaction.category] || 0) + transaction.amount
-        return acc
-      }, {})
-
-    const highest = Math.max(...Object.values(totals), 1)
-
-    return Object.entries(totals)
-      .map(([name, value]) => ({
-        name,
-        value,
-        percent: Math.round((value / highest) * 100),
-      }))
-      .sort((a, b) => b.value - a.value)
-  }, [monthTransactions])
-
-  function openForm() {
-    setForm({
-      type: 'expense',
-      description: '',
-      amount: '',
-      category: 'Alimentação',
-      date: selectedMonth === getCurrentMonth() ? getToday() : `${selectedMonth}-01`,
-    })
-    setShowForm(true)
-  }
-
-  function handleTypeChange(type) {
-    setForm((current) => ({
-      ...current,
-      type,
-      category: type === 'income' ? 'Receita' : 'Alimentação',
-    }))
-  }
-
-  function handleSubmit(event) {
-    event.preventDefault()
-    const amount = Number(form.amount)
-
-    if (!form.description.trim() || !Number.isFinite(amount) || amount <= 0 || !form.date) {
+    if (!sessao?.user?.id) {
+      setTransacoes([])
       return
     }
 
-    setTransactions((current) => [
-      ...current,
-      {
-        id: Date.now(),
-        description: form.description.trim(),
-        amount,
-        type: form.type,
-        category: form.type === 'income' ? 'Receita' : form.category,
-        date: form.date,
-      },
-    ])
-    setSelectedMonth(form.date.slice(0, 7))
-    setShowForm(false)
+    let ativo = true
+
+    async function carregarDados() {
+      setCarregandoDados(true)
+      setErro('')
+
+      try {
+        const [transacoesSalvas, orcamentoSalvo] = await Promise.all([
+          listarTransacoes(),
+          buscarOrcamentoMensal(),
+        ])
+
+        if (!ativo) return
+        setTransacoes(transacoesSalvas)
+        setOrcamento(orcamentoSalvo)
+        setOrcamentoRascunho(String(orcamentoSalvo))
+      } catch (error) {
+        if (ativo) setErro(error.message || 'Não foi possível carregar os dados.')
+      } finally {
+        if (ativo) setCarregandoDados(false)
+      }
+    }
+
+    carregarDados()
+
+    return () => {
+      ativo = false
+    }
+  }, [sessao?.user?.id])
+
+  const transacoesDoMes = useMemo(
+    () => transacoes
+      .filter((transacao) => transacao.data_transacao.startsWith(mesSelecionado))
+      .sort((a, b) => b.data_transacao.localeCompare(a.data_transacao) || b.criado_em.localeCompare(a.criado_em)),
+    [transacoes, mesSelecionado],
+  )
+
+  const receitas = useMemo(
+    () => transacoesDoMes
+      .filter((transacao) => transacao.tipo === 'receita')
+      .reduce((total, transacao) => total + transacao.valor, 0),
+    [transacoesDoMes],
+  )
+
+  const despesas = useMemo(
+    () => transacoesDoMes
+      .filter((transacao) => transacao.tipo === 'despesa')
+      .reduce((total, transacao) => total + transacao.valor, 0),
+    [transacoesDoMes],
+  )
+
+  const saldo = receitas - despesas
+  const percentualDisponivel = receitas > 0 ? Math.max(0, Math.min(100, Math.round((saldo / receitas) * 100))) : 0
+  const percentualOrcamento = orcamento > 0 ? Math.min(100, Math.round((despesas / orcamento) * 100)) : 0
+
+  const categorias = useMemo(() => {
+    const totais = transacoesDoMes
+      .filter((transacao) => transacao.tipo === 'despesa')
+      .reduce((acumulado, transacao) => {
+        acumulado[transacao.categoria] = (acumulado[transacao.categoria] || 0) + transacao.valor
+        return acumulado
+      }, {})
+
+    const maiorValor = Math.max(...Object.values(totais), 1)
+
+    return Object.entries(totais)
+      .map(([nome, valor]) => ({
+        nome,
+        valor,
+        percentual: Math.round((valor / maiorValor) * 100),
+      }))
+      .sort((a, b) => b.valor - a.valor)
+  }, [transacoesDoMes])
+
+  function abrirFormulario() {
+    setFormulario({
+      tipo: 'despesa',
+      descricao: '',
+      valor: '',
+      categoria: 'Alimentação',
+      data: mesSelecionado === obterMesAtual() ? obterHoje() : `${mesSelecionado}-01`,
+    })
+    setMostrarFormulario(true)
   }
 
-  function deleteTransaction(id) {
-    const transaction = transactions.find((item) => item.id === id)
-    if (!transaction || !window.confirm(`Excluir "${transaction.description}"?`)) return
-    setTransactions((current) => current.filter((item) => item.id !== id))
+  function alterarTipo(tipo) {
+    setFormulario((atual) => ({
+      ...atual,
+      tipo,
+      categoria: tipo === 'receita' ? 'Receita' : 'Alimentação',
+    }))
   }
 
-  function changeView(nextView) {
-    setView(nextView)
+  async function enviarTransacao(evento) {
+    evento.preventDefault()
+    const valor = Number(formulario.valor)
+
+    if (!formulario.descricao.trim() || !Number.isFinite(valor) || valor <= 0 || !formulario.data) return
+
+    setSalvando(true)
+    setErro('')
+
+    try {
+      const novaTransacao = await criarTransacao({
+        descricao: formulario.descricao.trim(),
+        valor,
+        tipo: formulario.tipo,
+        categoria: formulario.tipo === 'receita' ? 'Receita' : formulario.categoria,
+        data: formulario.data,
+      })
+
+      setTransacoes((atuais) => [novaTransacao, ...atuais])
+      setMesSelecionado(formulario.data.slice(0, 7))
+      setMostrarFormulario(false)
+    } catch (error) {
+      setErro(error.message || 'Não foi possível salvar a transação.')
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  async function removerTransacao(id) {
+    const transacao = transacoes.find((item) => item.id === id)
+    if (!transacao || !window.confirm(`Excluir "${transacao.descricao}"?`)) return
+
+    setErro('')
+
+    try {
+      await excluirTransacao(id)
+      setTransacoes((atuais) => atuais.filter((item) => item.id !== id))
+    } catch (error) {
+      setErro(error.message || 'Não foi possível excluir a transação.')
+    }
+  }
+
+  async function salvarOrcamento(evento) {
+    evento.preventDefault()
+    const valor = Number(orcamentoRascunho)
+    if (!Number.isFinite(valor) || valor < 0) return
+
+    setSalvando(true)
+    setErro('')
+
+    try {
+      await salvarOrcamentoMensal(valor)
+      setOrcamento(valor)
+    } catch (error) {
+      setErro(error.message || 'Não foi possível salvar o orçamento.')
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  function mudarTela(proximaTela) {
+    setTela(proximaTela)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const pageTitles = {
-    overview: 'Visão geral',
-    transactions: 'Transações',
-    categories: 'Categorias',
-    settings: 'Configurações',
+  async function sair() {
+    setErro('')
+    const { error } = await supabase.auth.signOut()
+    if (error) setErro(error.message || 'Não foi possível sair.')
+  }
+
+  if (verificandoSessao) {
+    return <div className="estado-carregamento">Carregando...</div>
+  }
+
+  if (!sessao) {
+    return <TelaAutenticacao />
+  }
+
+  const titulos = {
+    'visao-geral': 'Visão geral',
+    transacoes: 'Transações',
+    categorias: 'Categorias',
+    configuracoes: 'Configurações',
   }
 
   return (
@@ -258,47 +337,50 @@ function App() {
         </div>
 
         <nav className="nav-list" aria-label="Navegação principal">
-          <NavButton active={view === 'overview'} icon="⌂" label="Visão geral" onClick={() => changeView('overview')} />
-          <NavButton active={view === 'transactions'} icon="↕" label="Transações" onClick={() => changeView('transactions')} />
-          <NavButton active={view === 'categories'} icon="◫" label="Categorias" onClick={() => changeView('categories')} />
+          <BotaoNavegacao ativo={tela === 'visao-geral'} icone="⌂" rotulo="Visão geral" aoClicar={() => mudarTela('visao-geral')} />
+          <BotaoNavegacao ativo={tela === 'transacoes'} icone="↕" rotulo="Transações" aoClicar={() => mudarTela('transacoes')} />
+          <BotaoNavegacao ativo={tela === 'categorias'} icone="◫" rotulo="Categorias" aoClicar={() => mudarTela('categorias')} />
         </nav>
 
         <div className="sidebar-footer">
-          <NavButton active={view === 'settings'} icon="⚙" label="Configurações" onClick={() => changeView('settings')} />
+          <BotaoNavegacao ativo={tela === 'configuracoes'} icone="⚙" rotulo="Configurações" aoClicar={() => mudarTela('configuracoes')} />
         </div>
       </aside>
 
       <main className="main-content">
         <header className="topbar">
           <div>
-            <p className="eyebrow">{pageTitles[view]}</p>
-            <h1>{view === 'overview' ? `${greeting()}, Yasmin 🌷` : pageTitles[view]}</h1>
+            <p className="eyebrow">{titulos[tela]}</p>
+            <h1>{tela === 'visao-geral' ? `${obterSaudacao()}, Yasmin 🌷` : titulos[tela]}</h1>
           </div>
           <div className="topbar-actions">
             <label className="month-control">
               <span className="sr-only">Selecionar mês</span>
-              <input type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} />
+              <input type="month" value={mesSelecionado} onChange={(evento) => setMesSelecionado(evento.target.value)} />
             </label>
             <div className="avatar">Y</div>
           </div>
         </header>
 
-        {view === 'overview' && (
+        {erro && <div className="aviso erro aviso-app">{erro}</div>}
+        {carregandoDados && <div className="aviso aviso-app">Sincronizando dados...</div>}
+
+        {tela === 'visao-geral' && (
           <>
             <section className="hero-grid" aria-label="Resumo financeiro">
               <article className="balance-card">
                 <div className="balance-header">
                   <span>Saldo do mês</span>
-                  <span className="balance-badge">{formatMonth(selectedMonth)}</span>
+                  <span className="balance-badge">{formatarMes(mesSelecionado)}</span>
                 </div>
-                <strong className="balance-value">{formatCurrency(balance)}</strong>
+                <strong className="balance-value">{formatarMoeda(saldo)}</strong>
                 <p>
-                  {income > 0
-                    ? `${availablePercent}% da renda do mês ainda está disponível.`
+                  {receitas > 0
+                    ? `${percentualDisponivel}% da renda do mês ainda está disponível.`
                     : 'Adicione uma receita para acompanhar o saldo do mês.'}
                 </p>
                 <div className="balance-progress">
-                  <span style={{ width: `${availablePercent}%` }} />
+                  <span style={{ width: `${percentualDisponivel}%` }} />
                 </div>
               </article>
 
@@ -307,14 +389,14 @@ function App() {
                   <div className="stat-icon income">↑</div>
                   <div>
                     <span>Receitas</span>
-                    <strong>{formatCurrency(income)}</strong>
+                    <strong>{formatarMoeda(receitas)}</strong>
                   </div>
                 </article>
                 <article className="stat-card">
                   <div className="stat-icon expense">↓</div>
                   <div>
                     <span>Despesas</span>
-                    <strong>{formatCurrency(expenses)}</strong>
+                    <strong>{formatarMoeda(despesas)}</strong>
                   </div>
                 </article>
               </div>
@@ -327,16 +409,16 @@ function App() {
                     <span className="section-kicker">Movimentações</span>
                     <h2>Transações recentes</h2>
                   </div>
-                  <button className="text-button" onClick={() => changeView('transactions')}>Ver todas</button>
+                  <button className="text-button" onClick={() => mudarTela('transacoes')}>Ver todas</button>
                 </div>
-                <TransactionList items={monthTransactions.slice(0, 4)} onDelete={deleteTransaction} compact />
+                <ListaTransacoes itens={transacoesDoMes.slice(0, 4)} aoExcluir={removerTransacao} compacta />
               </article>
 
               <article className="panel quick-panel">
                 <span className="section-kicker">Atalho</span>
                 <h2>Registrar movimento</h2>
                 <p>Adicione uma despesa ou receita e o resumo será atualizado na hora.</p>
-                <button className="primary-button" onClick={openForm}><span>＋</span> Nova transação</button>
+                <button className="primary-button" onClick={abrirFormulario}><span>＋</span> Nova transação</button>
               </article>
             </section>
 
@@ -349,16 +431,16 @@ function App() {
                   </div>
                 </div>
 
-                {categories.length ? (
+                {categorias.length ? (
                   <div className="category-list">
-                    {categories.slice(0, 5).map((category) => (
-                      <div className="category-row" key={category.name}>
+                    {categorias.slice(0, 5).map((categoria) => (
+                      <div className="category-row" key={categoria.nome}>
                         <div className="category-label">
-                          <span>{categoryIcons[category.name]} {category.name}</span>
-                          <strong>{formatCurrency(category.value)}</strong>
+                          <span>{iconesCategoria[categoria.nome]} {categoria.nome}</span>
+                          <strong>{formatarMoeda(categoria.valor)}</strong>
                         </div>
                         <div className="category-track">
-                          <span style={{ width: `${category.percent}%` }} />
+                          <span style={{ width: `${categoria.percentual}%` }} />
                         </div>
                       </div>
                     ))}
@@ -375,48 +457,48 @@ function App() {
                 </div>
                 <div
                   className="budget-ring"
-                  style={{ '--budget-percent': `${budgetPercent}%` }}
-                  aria-label={`${budgetPercent}% do orçamento utilizado`}
+                  style={{ '--budget-percent': `${percentualOrcamento}%` }}
+                  aria-label={`${percentualOrcamento}% do orçamento utilizado`}
                 >
-                  <div><strong>{budgetPercent}%</strong><span>usado</span></div>
+                  <div><strong>{percentualOrcamento}%</strong><span>usado</span></div>
                 </div>
-                <p><strong>{formatCurrency(expenses)}</strong> de {formatCurrency(budget)}</p>
+                <p><strong>{formatarMoeda(despesas)}</strong> de {formatarMoeda(orcamento)}</p>
               </article>
             </section>
           </>
         )}
 
-        {view === 'transactions' && (
+        {tela === 'transacoes' && (
           <section className="panel page-panel">
             <div className="panel-header">
               <div>
-                <span className="section-kicker">{formatMonth(selectedMonth)}</span>
+                <span className="section-kicker">{formatarMes(mesSelecionado)}</span>
                 <h2>Todas as transações</h2>
               </div>
-              <button className="primary-button small-button" onClick={openForm}>＋ Adicionar</button>
+              <button className="primary-button small-button" onClick={abrirFormulario}>＋ Adicionar</button>
             </div>
-            <TransactionList items={monthTransactions} onDelete={deleteTransaction} />
+            <ListaTransacoes itens={transacoesDoMes} aoExcluir={removerTransacao} />
           </section>
         )}
 
-        {view === 'categories' && (
+        {tela === 'categorias' && (
           <section className="panel page-panel">
             <div className="panel-header">
               <div>
-                <span className="section-kicker">{formatMonth(selectedMonth)}</span>
+                <span className="section-kicker">{formatarMes(mesSelecionado)}</span>
                 <h2>Gastos por categoria</h2>
               </div>
             </div>
-            {categories.length ? (
+            {categorias.length ? (
               <div className="category-list expanded">
-                {categories.map((category) => (
-                  <div className="category-row" key={category.name}>
+                {categorias.map((categoria) => (
+                  <div className="category-row" key={categoria.nome}>
                     <div className="category-label">
-                      <span>{categoryIcons[category.name]} {category.name}</span>
-                      <strong>{formatCurrency(category.value)}</strong>
+                      <span>{iconesCategoria[categoria.nome]} {categoria.nome}</span>
+                      <strong>{formatarMoeda(categoria.valor)}</strong>
                     </div>
                     <div className="category-track">
-                      <span style={{ width: `${category.percent}%` }} />
+                      <span style={{ width: `${categoria.percentual}%` }} />
                     </div>
                   </div>
                 ))}
@@ -431,53 +513,67 @@ function App() {
           </section>
         )}
 
-        {view === 'settings' && (
+        {tela === 'configuracoes' && (
           <section className="panel page-panel settings-panel">
             <div>
               <span className="section-kicker">Planejamento</span>
               <h2>Orçamento mensal</h2>
-              <p>Defina quanto pretende gastar por mês. O valor fica salvo somente neste navegador.</p>
+              <p>Defina quanto pretende gastar por mês. O valor fica salvo na sua conta.</p>
             </div>
-            <label className="field budget-field">
-              <span>Limite mensal</span>
-              <div className="money-input">
-                <span>R$</span>
-                <input
-                  type="number"
-                  min="1"
-                  step="0.01"
-                  value={budget}
-                  onChange={(event) => setBudget(Math.max(1, Number(event.target.value) || 1))}
-                />
+
+            <form className="formulario-configuracoes" onSubmit={salvarOrcamento}>
+              <label className="field budget-field">
+                <span>Limite mensal</span>
+                <div className="money-input">
+                  <span>R$</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={orcamentoRascunho}
+                    onChange={(evento) => setOrcamentoRascunho(evento.target.value)}
+                  />
+                </div>
+              </label>
+              <button className="primary-button small-button" type="submit" disabled={salvando}>
+                {salvando ? 'Salvando...' : 'Salvar orçamento'}
+              </button>
+            </form>
+
+            <div className="conta-configuracoes">
+              <div>
+                <span className="section-kicker">Conta</span>
+                <strong>{sessao.user.email}</strong>
               </div>
-            </label>
+              <button className="secondary-button" type="button" onClick={sair}>Sair</button>
+            </div>
           </section>
         )}
       </main>
 
       <nav className="mobile-nav" aria-label="Navegação móvel">
-        <button className={view === 'overview' ? 'active' : ''} onClick={() => changeView('overview')}><span>⌂</span>Início</button>
-        <button className={view === 'transactions' ? 'active' : ''} onClick={() => changeView('transactions')}><span>↕</span>Transações</button>
-        <button className="mobile-add" aria-label="Nova transação" onClick={openForm}>＋</button>
-        <button className={view === 'categories' ? 'active' : ''} onClick={() => changeView('categories')}><span>◫</span>Categorias</button>
-        <button className={view === 'settings' ? 'active' : ''} onClick={() => changeView('settings')}><span>⚙</span>Ajustes</button>
+        <button className={tela === 'visao-geral' ? 'active' : ''} onClick={() => mudarTela('visao-geral')}><span>⌂</span>Início</button>
+        <button className={tela === 'transacoes' ? 'active' : ''} onClick={() => mudarTela('transacoes')}><span>↕</span>Transações</button>
+        <button className="mobile-add" aria-label="Nova transação" onClick={abrirFormulario}>＋</button>
+        <button className={tela === 'categorias' ? 'active' : ''} onClick={() => mudarTela('categorias')}><span>◫</span>Categorias</button>
+        <button className={tela === 'configuracoes' ? 'active' : ''} onClick={() => mudarTela('configuracoes')}><span>⚙</span>Ajustes</button>
       </nav>
 
-      {showForm && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowForm(false)}>
-          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="transaction-title" onMouseDown={(event) => event.stopPropagation()}>
+      {mostrarFormulario && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setMostrarFormulario(false)}>
+          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="transaction-title" onMouseDown={(evento) => evento.stopPropagation()}>
             <div className="modal-header">
               <div>
                 <span className="section-kicker">Movimentação</span>
                 <h2 id="transaction-title">Nova transação</h2>
               </div>
-              <button className="close-button" type="button" aria-label="Fechar" onClick={() => setShowForm(false)}>×</button>
+              <button className="close-button" type="button" aria-label="Fechar" onClick={() => setMostrarFormulario(false)}>×</button>
             </div>
 
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={enviarTransacao}>
               <div className="type-toggle">
-                <button type="button" className={form.type === 'expense' ? 'active expense-choice' : ''} onClick={() => handleTypeChange('expense')}>Despesa</button>
-                <button type="button" className={form.type === 'income' ? 'active income-choice' : ''} onClick={() => handleTypeChange('income')}>Receita</button>
+                <button type="button" className={formulario.tipo === 'despesa' ? 'active expense-choice' : ''} onClick={() => alterarTipo('despesa')}>Despesa</button>
+                <button type="button" className={formulario.tipo === 'receita' ? 'active income-choice' : ''} onClick={() => alterarTipo('receita')}>Receita</button>
               </div>
 
               <label className="field">
@@ -485,10 +581,10 @@ function App() {
                 <input
                   autoFocus
                   required
-                  maxLength="60"
-                  placeholder={form.type === 'income' ? 'Ex.: Salário' : 'Ex.: Mercado'}
-                  value={form.description}
-                  onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
+                  maxLength="120"
+                  placeholder={formulario.tipo === 'receita' ? 'Ex.: Salário' : 'Ex.: Mercado'}
+                  value={formulario.descricao}
+                  onChange={(evento) => setFormulario((atual) => ({ ...atual, descricao: evento.target.value }))}
                 />
               </label>
 
@@ -503,8 +599,8 @@ function App() {
                       min="0.01"
                       step="0.01"
                       placeholder="0,00"
-                      value={form.amount}
-                      onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))}
+                      value={formulario.valor}
+                      onChange={(evento) => setFormulario((atual) => ({ ...atual, valor: evento.target.value }))}
                     />
                   </div>
                 </label>
@@ -514,25 +610,27 @@ function App() {
                   <input
                     required
                     type="date"
-                    value={form.date}
-                    onChange={(event) => setForm((current) => ({ ...current, date: event.target.value }))}
+                    value={formulario.data}
+                    onChange={(evento) => setFormulario((atual) => ({ ...atual, data: evento.target.value }))}
                   />
                 </label>
               </div>
 
-              {form.type === 'expense' && (
+              {formulario.tipo === 'despesa' && (
                 <label className="field">
                   <span>Categoria</span>
                   <select
-                    value={form.category}
-                    onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
+                    value={formulario.categoria}
+                    onChange={(evento) => setFormulario((atual) => ({ ...atual, categoria: evento.target.value }))}
                   >
-                    {expenseCategories.map((category) => <option key={category}>{category}</option>)}
+                    {categoriasDespesa.map((categoria) => <option key={categoria}>{categoria}</option>)}
                   </select>
                 </label>
               )}
 
-              <button className="primary-button submit-button" type="submit">Salvar transação</button>
+              <button className="primary-button submit-button" type="submit" disabled={salvando}>
+                {salvando ? 'Salvando...' : 'Salvar transação'}
+              </button>
             </form>
           </div>
         </div>
